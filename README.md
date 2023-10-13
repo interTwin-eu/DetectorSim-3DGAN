@@ -1,43 +1,17 @@
-# Template for interTwin repositories
+# 3DGAN model for fast particle detector simulation
 
-This repository is to be used as a repository template for creating a new interTwin
-repository, and is aiming at being a clean basis promoting currently accepted
-good practices.
+### 3D Generative Adversarial Network for generation of images of calorimeter depositions
+This project is based on the prototype 3DGAN model developed at CERN and is developed on PyTorch Lightning framework. Can also be found in the following repositories in different ML framework versions: 
+- Keras on TF1: [https://github.com/svalleco/3Dgan/tree/Anglegan/keras](https://github.com/svalleco/3Dgan/tree/Anglegan/keras)
+- Keras on TF2 (Accelerated3DGAN): [https://github.com/CERN-IT-INNOVATION/3DGAN](https://github.com/CERN-IT-INNOVATION/3DGAN)
 
-It includes:
+## Dataset
+The data used for the training and validation processes of the model are 3D images representing calorimeter energy depositions and are publicly available in different formats:
+- compressed format: [https://zenodo.org/records/3603086#.ZEJOTs5Byqi](https://zenodo.org/records/3603086#.ZEJOTs5Byqi)
+- HDF5: [https://cernbox.cern.ch/s/3rK5UeRzRR3Kbnu](https://cernbox.cern.ch/s/3rK5UeRzRR3Kbnu)
+- [tfrecords](https://cernbox.cern.ch/files/link/public/DEUSrqXGVLUwpK2?tiles-size=1&items-per-page=100&view-mode=resource-table&sort-by=name&sort-dir=asc) (used for the Accelerated3DGAN version)
 
-- License information
-- Copyright and author information
-- Code of conduct and contribution guidelines
-- Templates for PR and issues
-- Code owners file for automatic assignment of PR reviewers
-- [GitHub actions](https://github.com/features/actions) workflows for linting
-  and checking links
 
-Content is based on:
-
-- [Contributor Covenant](http://contributor-covenant.org)
-- [Semantic Versioning](https://semver.org/)
-- [Chef Cookbook Contributing Guide](https://github.com/chef-cookbooks/community_cookbook_documentation/blob/master/CONTRIBUTING.MD)
-
-## GitHub repository management rules
-
-All changes should go through Pull Requests.
-
-### Merge management
-
-- Only squash should be enforced in the repository settings.
-- Update commit message for the squashed commits as needed.
-
-### Protection on main branch
-
-To be configured on the repository settings.
-
-- Require pull request reviews before merging
-  - Dismiss stale pull request approvals when new commits are pushed
-  - Require review from Code Owners
-- Require status checks to pass before merging
-  - GitHub actions if available
-  - Other checks as available and relevant
-  - Require branches to be up to date before merging
-- Include administrators
+## Related work
+1. Khattak, G.R., Vallecorsa, S., Carminati, F. et al. Fast simulation of a high granularity calorimeter by generative adversarial networks. Eur. Phys. J. C 82, 386 (2022). DOI:  [https://doi.org/10.1140/epjc/s10052-022-10258-4](https://doi.org/10.1140/epjc/s10052-022-10258-4)
+2. Physics Validation of Novel Convolutional 2D Architectures for Speeding Up High Energy Physics Simulations, Florian Rehm, Sofia Vallecorsa, Kerstin Borras, Dirk Krücker. Paper published at vCHEP2021 conference. DOI: [https://doi.org/10.48550/arXiv.2105.08960](https://doi.org/10.48550/arXiv.2105.08960)
