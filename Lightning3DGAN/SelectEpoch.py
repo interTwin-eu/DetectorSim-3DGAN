@@ -9,26 +9,37 @@ import h5py
 import os
 import numpy as np
 import glob
-import numpy.core.umath_tests as umath
+#import numpy.core.umath_tests as umath
 import time
 import math
 import ROOT
 import argparse
 from scipy import stats
 from scipy.stats import wasserstein_distance as wass
-if '.cern.ch' in os.environ.get('HOSTNAME'): # Here a check for host can be used
-    tlab = True
-else:
-    tlab= False
+from pl_3dgan_models_v1 import *
+from analysis_utils import *
+# if '.cern.ch' in os.environ.get('HOSTNAME'): # Here a check for host can be used
+#     tlab = True
+# else:
+#     tlab= False
 
-try:
-    import setGPU #if Caltech
-except:
-    pass
+# try:
+#     import setGPU #if Caltech
+# except:
+#     pass
 
 import utils.GANutils as gan
 import utils.ROOTutils as my
 sys.path.insert(0,'../')
+import re
+
+def extract_epoch_number(name):
+    match = re.search(r'epoch_(\d+)', name)  # Look for 'epoch_' followed by digits
+    if match:
+        return int(match.group(1))  # Return the captured number
+    else:
+        print(f"Could not find epoch number in the file name: {name}")
+        return None
 
 def main():
    parser = get_parser()
@@ -63,7 +74,7 @@ def main():
    fits = params.fits if isinstance(params.fits, list) else [params.fits]
    opt = params.opt if isinstance(params.opt, list) else [params.opt]
    if ang:
-     from AngleArch3dGAN import generator # architecture
+     #from AngleArch3dGAN import generator # architecture
      dscale = 50.
      if not xscale:
        xscale=1.
@@ -72,10 +83,10 @@ def main():
      if not latent:
        latent = 256
      if datapath=='reduced':
-       if tlab:
-         datapath = '/gkhattak/data/*Measured3ThetaEscan/*.h5'
-       else:
-         datapath = "/storage/group/gpu/bigdata/gkhattak/*Measured3ThetaEscan/*.h5"  # Data path for 100-200 GeV must be changed here 
+      #  if tlab:
+      #    datapath = '/gkhattak/data/*Measured3ThetaEscan/*.h5'
+      #  else:
+       datapath = "/eos/user/k/ktsolaki/data/3dgan_data/*.h5"  # Data path for 100-200 GeV must be changed here /storage/group/gpu/bigdata/gkhattak/*Measured3ThetaEscan/*.h5
        events_per_file = 5000
        energies = [0, 110, 150, 190]
      else:
@@ -86,7 +97,7 @@ def main():
        events_per_file = 10000
        energies =[0, 50, 100, 150, 200, 250, 300, 350, 400, 450]
    else:
-     from EcalEnergyGan import generator
+     #from EcalEnergyGan import generator
      dscale = 1.
      if not xscale:
        xscale=100.
@@ -101,28 +112,63 @@ def main():
      events_per_file = 10000
      energies =[0, 100, 200, 300, 400]
 
-   genpaths =[]
-   # get a list of paths for all weight directories from different trainings
+   device = torch.device("cuda:1" if torch.cuda.is_available() else 'cpu')
+   print(f'Using device: {device}')
+
+  #  genpaths =[]
+  #  # get a list of paths for all weight directories from different trainings
+  #  for gweight in gweightdir:
+  #     genpaths.append( gweight +'/*generator*.hdf5')# path to weights
+  #  sorted_path = 'Anglesorted'  # where sorted data is to be placed
+  #  print(latent)
+  #  #g= generator(latent_size=latent, dformat=dformat) # generator
+  #  g = Generator(latent)
+  #  g = g.to(device)
+  #  #g.load_state_dict(torch.load(gweight))
+  #  gen_weights=[]
+  #  #gan.safe_mkdir(outdir) # make a diretory for results
+  #  # list of lists of weights for each path
+  #  for index, genpath in enumerate(genpaths):
+  #     gen_weights.append(sorted(glob.glob(genpath))) # append all weights for a particular path
+  #     gen_weights[index]=gen_weights[index][start:stop] # select weights based on start and stop
+  #  epochs = []
+  #  for index, gen_weight in enumerate(gen_weights):
+  #    epoch=[]
+  #    for i in np.arange(len(gen_weight)):
+  #       name = os.path.basename(gen_weight[i])
+  #       #num = int(filter(str.isdigit, name)[:-1])# get the epoch number from the weights
+  #       num = int(''.join(list(filter(str.isdigit, name)))[:-1]) #converted the line above as it was causing a problem
+  #       epoch.append(num) # make a list of epochs from one path
+  #    epochs.append(epoch)# append this list to a list for all paths
+  #    print("{} weights are found in {}".format(len(gen_weight), gweightdir[index])) 
+
+   genpaths = []
+  # get a list of paths for all weight directories from different trainings
    for gweight in gweightdir:
-      genpaths.append( gweight +'/*generator*.hdf5')# path to weights
+       genpaths.append(os.path.join(gweight, '*generator*.pth'))  # Modify to use full path
+
    sorted_path = 'Anglesorted'  # where sorted data is to be placed
    print(latent)
-   g= generator(latent_size=latent, dformat=dformat) # generator
-   gen_weights=[]
-   gan.safe_mkdir(outdir) # make a diretory for results
-   # list of lists of weights for each path
+
+   g = Generator(latent)
+   g = g.to(device)
+
+   gen_weights = []
+  # list of lists of weights for each path
    for index, genpath in enumerate(genpaths):
-      gen_weights.append(sorted(glob.glob(genpath))) # append all weights for a particular path
-      gen_weights[index]=gen_weights[index][start:stop] # select weights based on start and stop
+       gen_weights.append(sorted(glob.glob(genpath)))  # append all weights for a particular path
+       gen_weights[index] = gen_weights[index][start:stop]  # select weights based on start and stop
+
    epochs = []
    for index, gen_weight in enumerate(gen_weights):
-     epoch=[]
-     for i in np.arange(len(gen_weight)):
-        name = os.path.basename(gen_weight[i])
-        num = int(filter(str.isdigit, name)[:-1])# get the epoch number from the weights
-        epoch.append(num) # make a list of epochs from one path
-     epochs.append(epoch)# append this list to a list for all paths
-     print("{} weights are found in {}".format(len(gen_weight), gweightdir[index])) 
+       epoch = []
+       for i in np.arange(len(gen_weight)):
+           name = os.path.basename(gen_weight[i])  # Get the base name of the file
+           num = extract_epoch_number(name)  # Extract epoch number using the regex function
+           if num is not None:
+               epoch.append(num)  # Append the epoch number if found
+       epochs.append(epoch)  # Append this list to a list for all paths
+       print(f"{len(gen_weight)} weights are found in {gweightdir[index]}")
    
    # Get results and errors
    result, error_bar = GetResults(opt, outdir, gen_weights, g, datapath, sorted_path, particle
@@ -143,13 +189,13 @@ def get_parser():
     # defaults apply at caltech
     parser = argparse.ArgumentParser(description='3D GAN Params' )
     parser.add_argument('--latentsize', action='store', type=int, help='size of random N(0, 1) latent space to sample')
-    parser.add_argument('--datapath', action='store', type=str, default='full', help='HDF5 files to train from.')
+    parser.add_argument('--datapath', action='store', type=str, default='reduced', help='HDF5 files to train from.')
     parser.add_argument('--particle', action='store', type=str, default='Ele', help='Type of particle.')
     parser.add_argument('--angtype', action='store', type=str, default='mtheta', help='Angle used.')
     parser.add_argument('--outdir', action='store', type=str, default='results/best_epoch_gan_training/', help='Directory to store the analysis plots.')
     parser.add_argument('--sortdir', action='store', type=str, default='SortedData', help='Directory to store sorted data.')
     parser.add_argument('--nbEvents', action='store', type=int, default=20000, help='Max limit for events used for Testing')
-    parser.add_argument('--eventsperfile', action='store', type=int, default=10000, help='Number of events in a file')
+    parser.add_argument('--eventsperfile', action='store', type=int, default=5000, help='Number of events in a file')
     parser.add_argument('--binevents', action='store', type=int, default=10000, help='Number of events in each bin')
     parser.add_argument('--start', action='store', type=int, default=0, help='plot beginning from epoch')
     parser.add_argument('--stop', action='store', type=int, default=500, help='plot till epoch')
@@ -390,7 +436,8 @@ def analyse(g, read_data, save_data, gen_weights, datapath, sorted_path, optimiz
      data_time = time.time() - start
    print ("{} events were put in {} bins".format(total, len(energies)))
    for gen_weight in gen_weights:
-     g.load_weights(gen_weight)            
+     g.load_state_dict(torch.load(gen_weight))
+     #g.load_weights(gen_weight)            
      start = time.time()
      print("Weights are loaded from {}".format(gen_weight))
      for energy in energies:
