@@ -27,29 +27,29 @@ This scripts compares 2D projections for all the three planes for events from th
 
 python3 2dprojUpdated.py --gweight *generator_weights* --outdir *results/your_result_dir*
 
+### SimpleAnalysis.py
+
+This scripts compares the two most crucial features of the generated events: the sampling fraction and the shower shapes. The script can be submitted as:
+
+python3 SimpleAnalysis.py --gweights *weight1 weight2* --labels label1 label2 --outdir *results/your_result_dir*
+
+### RootAnalysisAngle.py (updated for single weight use, originally supports list of weights)
+
+The scripts compares in detail different features of G4 and GAN events. The script can be submitted as:
+
+python3 RootAnalysisAngle.py --gweights *generator_weight1 generator_weight2* --dweights *discriminator_weight1  discriminator_weight2* --labels label1 label2 --outdir *results/your_result_dir*
+
 ### LossPlotsPython.py
 
 This script takes the loss history generated from each training, saved as a pickle file. The plots are generated using matplotlib. The script can be submitted as:
 
 python3 LossPlotsPython.py --historyfile *path_to_loss_history* --outdir *path_to_save_results*
 
-### RootAnalysisAngle.py 
-
-The scripts compares in detail different features of G4 and GAN events. The script can be submitted as:
-
-python3 RootAnalysisAngle.py --gweights *generator_weight1 generator_weight2* --dweights *discriminator_weight1  discriminator_weight2* --labels label1 label2 --outdir *results/your_result_dir*
-
 ### SelectEpoch.py (not used)
 
 This script select the best epoch among a predefined number of epochs. The plots also provides the epoch to epoch progress based on the sampling fraction. The script can be submitted as:
 
 python SelectEpoch.py --gweightsdir *path_to_weights_directory* --outdir *path_to_save_results* 
-
-### SimpleAnalysis.py
-
-This scripts compares the two most crucial features of the generated events: the sampling fraction and the shower shapes. The script can be submitted as:
-
-python3 SimpleAnalysis.py --gweights *weight1 weight2* --labels label1 label2 --outdir *results/your_result_dir*
 
 
 ## Related work
