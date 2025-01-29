@@ -9,14 +9,26 @@ from collections import defaultdict
 import pytorch_lightning as pl
 import sys
 import pickle
+import time
 
-from pl_3dgan_models import *
+from typing import Optional, Tuple, Dict, Any
+import os
+#from lightning.pytorch.utilities.types import EVAL_DATALOADERS
+
+import wandb
+from pytorch_lightning.loggers import WandbLogger
+
+from pl_3dgan_models_v1 import *
+from analysis_utils import *
 
 
-class MyDataset(Dataset):
-    def __init__(self, datapath="/afs/cern.ch/work/k/ktsolaki/private/projects/GAN_scripts/3DGAN/Accelerated3DGAN/src/Accelerated3DGAN/data/*.h5"):
+class ParticlesDataset(Dataset):
+    def __init__(self, datapath="/eos/user/k/ktsolaki/data/3dgan_data/*.h5", max_samples: Optional[int] = None): #/eos/user/k/ktsolaki/data/3dgan_data/*.h5 afs/cern.ch/work/k/ktsolaki/private/projects/GAN_scripts/3DGAN/Accelerated3DGAN/src/Accelerated3DGAN/data/*.h5
         self.datapath = datapath
-        self.data = self.fetch_data(self.datapath)
+        self.max_samples = max_samples
+        self.data = dict()
+
+        self.fetch_data()
 
     def __len__(self):
         return len(self.data["X"])
@@ -24,22 +36,47 @@ class MyDataset(Dataset):
     def __getitem__(self, idx):
         return {"X": self.data["X"][idx], "Y": self.data["Y"][idx], "ang": self.data["ang"][idx], "ecal": self.data["ecal"][idx]}
 
-    def fetch_data(self, datapath):
+    def fetch_data(self) -> None:
 
-        print("Searching in :", datapath)
-        Files = sorted(glob.glob(datapath))
-        print("Found {} files. ".format(len(Files)))
+        print("Searching in :", self.datapath)
+        files = sorted(glob.glob(self.datapath))
+        print("Found {} files. ".format(len(files)))
+        if len(files) == 0:
+            raise RuntimeError(f"No H5 files found at '{self.datapath}'!")
 
-        concatenated_datasets = []
-        for datafile in Files:
-          f=h5py.File(datafile,'r')
-          dataset = self.GetDataAngleParallel(f)
-          concatenated_datasets.append(dataset)
-          result = {key: [] for key in concatenated_datasets[0].keys()} # Initialize result dictionary
-          for d in concatenated_datasets:
-            for key in result.keys():
-              result[key].extend(d[key])
-        return result
+        # concatenated_datasets = []
+        # for datafile in Files:
+        #   f=h5py.File(datafile,'r')
+        #   dataset = self.GetDataAngleParallel(f)
+        #   concatenated_datasets.append(dataset)
+        #   result = {key: [] for key in concatenated_datasets[0].keys()} # Initialize result dictionary
+        #   for d in concatenated_datasets:
+        #     for key in result.keys():
+        #       result[key].extend(d[key])
+        # return result
+
+        for datafile in files:
+            f = h5py.File(datafile, 'r')
+            dataset = self.GetDataAngleParallel(f)
+            for field, vals_array in dataset.items():
+                # Cast to float32 the full energy data (if using restricted energy data comment out the following line)
+                vals_array = vals_array.astype(np.float32)
+                if self.data.get(field) is not None:
+                    # Resize to include the new array
+                    new_shape = list(self.data[field].shape)
+                    new_shape[0] += len(vals_array)
+                    self.data[field].resize(new_shape)
+                    self.data[field][-len(vals_array):] = vals_array
+                else:
+                    self.data[field] = vals_array
+
+            # Stop loading data, if self.max_samples reached
+            if (self.max_samples is not None
+                    and len(self.data[field]) >= self.max_samples):
+                for field, vals_array in self.data.items():
+                    self.data[field] = vals_array[:self.max_samples]
+
+                break
 
     def GetDataAngleParallel(
     self,
@@ -94,30 +131,43 @@ class MyDataset(Dataset):
       return final_dataset
 
 
-class MyDataModule(pl.LightningDataModule):
-    def __init__(self, batch_size: int = 64, datapath="/afs/cern.ch/work/k/ktsolaki/private/projects/GAN_scripts/3DGAN/Accelerated3DGAN/src/Accelerated3DGAN/data/*.h5"):
+class ParticlesDataModule(pl.LightningDataModule):
+    def __init__(self, batch_size: int = 64, datapath="/eos/user/k/ktsolaki/data/3dgan_data/*.h5", num_workers: int = 4, max_samples: Optional[int] = None) -> None: #/eos/user/k/ktsolaki/data/3dgan_data/*.h5 afs/cern.ch/work/k/ktsolaki/private/projects/GAN_scripts/3DGAN/Accelerated3DGAN/src/Accelerated3DGAN/data/*.h5
         super().__init__()
         self.batch_size = batch_size
         self.datapath = datapath
+        self.num_workers = num_workers
+        self.max_samples = max_samples
 
     def setup(self, stage: str = None):
         # make assignments here (val/train/test split)
         # called on every process in DDP
 
         if stage == 'fit' or stage is None:
-            self.dataset = MyDataset(self.datapath)
+            self.dataset = ParticlesDataset(self.datapath, max_samples=self.max_samples)
             dataset_length = len(self.dataset)
             split_point = int(dataset_length * 0.9)
             self.train_dataset, self.val_dataset = torch.utils.data.random_split(self.dataset, [split_point, dataset_length - split_point])
+
+        if stage == 'predict':
+            # TODO: inference dataset should be different in that it
+            # does not contain images!
+            self.predict_dataset = ParticlesDataset(
+                self.datapath,
+                max_samples=self.max_samples
+            )
 
         #if stage == 'test' or stage is None:
             #self.test_dataset = MyDataset(self.data_dir, train=False)
 
     def train_dataloader(self):
-        return DataLoader(self.train_dataset, batch_size=self.batch_size, drop_last=True)
+        return DataLoader(self.train_dataset, batch_size=self.batch_size, drop_last=True, num_workers=self.num_workers)
 
     def val_dataloader(self):
-        return DataLoader(self.val_dataset, batch_size=self.batch_size, drop_last=True) 
+        return DataLoader(self.val_dataset, batch_size=self.batch_size, drop_last=True, num_workers=self.num_workers)
+
+    def predict_dataloader(self): #-> EVAL_DATALOADERS
+        return DataLoader(self.predict_dataset, num_workers=self.num_workers, batch_size=self.batch_size, drop_last=True) 
 
     #def test_dataloader(self):
         #return DataLoader(self.test_dataset, batch_size=self.batch_size)
@@ -127,7 +177,7 @@ class ThreeDGAN(pl.LightningModule):
     def __init__(self, latent_size=256, batch_size=64, loss_weights=[3, 0.1, 25, 0.1], power=0.85, lr=0.001):
         super().__init__()
         self.save_hyperparameters()
-        self.automatic_optimization=False
+        self.automatic_optimization = False
 
         self.latent_size = latent_size
         self.batch_size = batch_size
@@ -145,7 +195,7 @@ class ThreeDGAN(pl.LightningModule):
         self.index = 0
         self.train_history = defaultdict(list)
         self.test_history = defaultdict(list)
-        self.pklfile = "/afs/cern.ch/work/k/ktsolaki/private/projects/GAN_scripts/3DGAN/Accelerated3DGAN/src/Accelerated3DGAN/results/3dgan_history_test.pkl"
+        self.pklfile = "/eos/user/k/ktsolaki/misc/3dgan_pytorch/3dgan_history_30ep_all.pkl"
 
 
     def BitFlip(self, x, prob=0.05):
@@ -170,7 +220,7 @@ class ThreeDGAN(pl.LightningModule):
 
     def compute_global_loss(self, labels, predictions, loss_weights=[3, 0.1, 25, 0.1]):
         # Can be initialized outside
-        binary_crossentropy_object = nn.BCEWithLogitsLoss(reduction='none')
+        binary_crossentropy_object = nn.BCELoss(reduction='none')
         #there is no equivalent in pytorch for tf.keras.losses.MeanAbsolutePercentageError --> using the custom "mean_absolute_percentage_error" above!
         mean_absolute_percentage_error_object1 = self.mean_absolute_percentage_error(predictions[1], labels[1])
         mean_absolute_percentage_error_object2 = self.mean_absolute_percentage_error(predictions[3], labels[3])
@@ -223,7 +273,7 @@ class ThreeDGAN(pl.LightningModule):
         print("calculating real_batch_loss...")
         real_batch_loss = self.compute_global_loss(
             labels, predictions, self.loss_weights)
-        self.log("real_batch_loss", sum(real_batch_loss), prog_bar=True, on_step=True, on_epoch=True)
+        self.log("real_batch_loss", sum(real_batch_loss), prog_bar=True, on_step=True, on_epoch=True, sync_dist=True)
         print("real batch disc train")
         #the following 3 lines correspond in tf version to:
         #gradients = tape.gradient(real_batch_loss, discriminator.trainable_variables)
@@ -243,7 +293,7 @@ class ThreeDGAN(pl.LightningModule):
 
         fake_batch_loss = self.compute_global_loss(
             labels, predictions, self.loss_weights)
-        self.log("fake_batch_loss", sum(fake_batch_loss), prog_bar=True, on_step=True, on_epoch=True)
+        self.log("fake_batch_loss", sum(fake_batch_loss), prog_bar=True, on_step=True, on_epoch=True, sync_dist=True)
         print("fake batch disc train")
         #the following 3 lines correspond to
         #gradients = tape.gradient(fake_batch_loss, discriminator.trainable_variables)
@@ -270,7 +320,7 @@ class ThreeDGAN(pl.LightningModule):
 
             loss = self.compute_global_loss(
                 labels, predictions, self.loss_weights)
-            self.log("gen_loss", sum(loss), prog_bar=True, on_step=True, on_epoch=True)
+            self.log("gen_loss", sum(loss), prog_bar=True, on_step=True, on_epoch=True, sync_dist=True)
             print("gen train")
             optimizer_generator.zero_grad()
             self.manual_backward(sum(loss))
@@ -281,9 +331,9 @@ class ThreeDGAN(pl.LightningModule):
                 gen_losses_train.append(el)
 
         avg_generator_loss = sum(gen_losses_train) / len(gen_losses_train)
-        self.log("generator_loss", avg_generator_loss.item(), prog_bar=True, on_step=True, on_epoch=True)
+        self.log("generator_loss", avg_generator_loss.item(), prog_bar=True, on_step=True, on_epoch=True, sync_dist=True)
         #avg_generator_loss = [(a + b) / 2 for a, b in zip(*gen_losses_train)]
-        #self.log("generator_loss", sum(avg_generator_loss), prog_bar=True, on_step=True, on_epoch=True)
+        #self.log("generator_loss", sum(avg_generator_loss), prog_bar=True, on_step=True, on_epoch=True, sync_dist=True)
 
         gen_losses = []
         # I'm not returning anything as in pl you do not return anything when you back-propagate manually
@@ -342,29 +392,37 @@ class ThreeDGAN(pl.LightningModule):
         #self.index += 1 #this might be moved after test cycle
         
         #logging of gen and disc loss done by Trainer
-        #self.log('epoch_gen_loss', self.epoch_gen_loss, on_step=True, on_epoch=True)
-        #self.log('epoch_disc_loss', self.epoch_disc_loss, on_step=True, on_epoch=True)
+        #self.log('epoch_gen_loss', self.epoch_gen_loss, on_step=True, on_epoch=True, sync_dist=True)
+        #self.log('epoch_disc_loss', self.epoch_disc_loss, on_step=True, on_epoch=True, sync_dist=True)
     
     def on_train_epoch_end(self): #outputs
+        epoch_num = self.current_epoch
         discriminator_train_loss = np.mean(np.array(self.epoch_disc_loss), axis=0)
         generator_train_loss = np.mean(np.array(self.epoch_gen_loss), axis=0)
 
         self.train_history["generator"].append(generator_train_loss)
         self.train_history["discriminator"].append(discriminator_train_loss)
 
-        print("-" * 65)
-        ROW_FMT = ("{0:<20s} | {1:<4.2f} | {2:<10.2f} | {3:<10.2f}| {4:<10.2f} | {5:<10.2f}")
-        print(ROW_FMT.format("generator (train)", *self.train_history["generator"][-1]))
-        print(ROW_FMT.format("discriminator (train)", *self.train_history["discriminator"][-1]))
+        # Log history to WandB
+        wandb.log({
+            "train/discriminator_loss": discriminator_train_loss[0],
+            "train/generator_loss": generator_train_loss[0],
+            "epoch": epoch_num
+        })
 
-        torch.save(self.generator.state_dict(), "generator_weights.pth")
-        torch.save(self.discriminator.state_dict(), "discriminator_weights.pth")
+        torch.save(self.generator.state_dict(), f"generator_weights_epoch_{epoch_num}.pth")
+        torch.save(self.discriminator.state_dict(), f"discriminator_weights_epoch_{epoch_num}.pth")
 
         with open(self.pklfile, "wb") as f:
             pickle.dump({"train": self.train_history, "test": self.test_history}, f)
 
         #pickle.dump({"train": self.train_history}, open(self.pklfile, "wb"))
-        print("train-loss:" + str(self.train_history["generator"][-1][0]))
+        #print("train-loss:" + str(self.train_history["generator"][-1][0]))
+
+        print("-" * 65)
+        ROW_FMT = ("{0:<20s} | {1:<4.2f} | {2:<10.2f} | {3:<10.2f}| {4:<10.2f} | {5:<10.2f}")
+        print(ROW_FMT.format("generator (train)", *self.train_history["generator"][-1]))
+        print(ROW_FMT.format("discriminator (train)", *self.train_history["discriminator"][-1]))
     
     def validation_step(self, batch, batch_idx):
         image_batch, energy_batch, ang_batch, ecal_batch = batch['X'], batch['Y'], batch['ang'], batch['ecal']
@@ -410,8 +468,8 @@ class ThreeDGAN(pl.LightningModule):
         gen_eval = self.discriminator(generated_images)
         gen_eval_loss = self.compute_global_loss(labels, gen_eval, self.loss_weights)
 
-        self.log('val_discriminator_loss', sum(disc_eval_loss), on_epoch=True, prog_bar=True)
-        self.log('val_generator_loss', sum(gen_eval_loss), on_epoch=True, prog_bar=True)
+        self.log('val_discriminator_loss', sum(disc_eval_loss), on_epoch=True, prog_bar=True, sync_dist=True)
+        self.log('val_generator_loss', sum(gen_eval_loss), on_epoch=True, prog_bar=True, sync_dist=True)
 
         disc_test_loss = [disc_eval_loss[0], disc_eval_loss[1], disc_eval_loss[2], disc_eval_loss[3]]
         gen_test_loss = [gen_eval_loss[0], gen_eval_loss[1], gen_eval_loss[2], gen_eval_loss[3]]
@@ -444,6 +502,12 @@ class ThreeDGAN(pl.LightningModule):
         self.test_history["generator"].append(generator_test_loss)
         self.test_history["discriminator"].append(discriminator_test_loss)
 
+        wandb.log({
+        "val/discriminator_loss": discriminator_test_loss[0],
+        "val/generator_loss": generator_test_loss[0],
+        "epoch": self.current_epoch
+    })
+
         print("-" * 65)
         ROW_FMT = ("{0:<20s} | {1:<4.2f} | {2:<10.2f} | {3:<10.2f}| {4:<10.2f} | {5:<10.2f}")
         print(ROW_FMT.format("generator (test)", *self.test_history["generator"][-1]))
@@ -454,21 +518,155 @@ class ThreeDGAN(pl.LightningModule):
             pickle.dump({"train": self.train_history, "test": self.test_history}, f)
         #pickle.dump({"test": self.test_history}, open(self.pklfile, "wb"))
         #print("train-loss:" + str(self.train_history["generator"][-1][0]))
+
+    def predict_step(
+        self,
+        batch: Any,
+        batch_idx: int,
+        dataloader_idx: int = 0
+    ) -> Any:
+        energy_batch, ang_batch = batch['Y'], batch['ang']
+
+        energy_batch = energy_batch.to(self.device)
+        ang_batch = ang_batch.to(self.device)
+
+        # Generate Fake events with same energy and angle as data batch
+        noise = torch.randn(
+            (energy_batch.shape[0], self.latent_size - 2),
+            dtype=torch.float32,
+            device=self.device
+        )
+
+        # print(f"Reshape energy: {energy_batch.view(-1, 1).shape}")
+        # print(f"Reshape angle: {ang_batch.view(-1, 1).shape}")
+        # print(f"Noise: {noise.shape}")
+
+        generator_ip = torch.cat(
+            [energy_batch.view(-1, 1), ang_batch.view(-1, 1), noise],
+            dim=1
+        )
+        # print(f"Generator input: {generator_ip.shape}")
+        generated_images = self.generator(generator_ip)
+        # print(f"Generated batch size {generated_images.shape}")
+        return {'images': generated_images,
+                'energies': energy_batch,
+                'angles': ang_batch}
     
     def configure_optimizers(self):
         lr = self.hparams.lr
 
-        optimizer_discriminator = torch.optim.RMSprop(self.discriminator.parameters(), lr)
-        optimizer_generator = torch.optim.RMSprop(self.generator.parameters(), lr)
+        optimizer_discriminator = torch.optim.RMSprop(self.discriminator.parameters(), lr, alpha=0.9, eps=1e-07)
+        optimizer_generator = torch.optim.RMSprop(self.generator.parameters(), lr, alpha=0.9, eps=1e-07)
         return [optimizer_discriminator, optimizer_generator], []
 
 
-data = MyDataModule()
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
+wandb_logger = WandbLogger(project='3dgan_training')
+
+data = ParticlesDataModule()
 model = ThreeDGAN()
 trainer = pl.Trainer(
     accelerator="gpu",
     devices=1,
-    max_epochs=1,
+    max_epochs=30,
+    logger=wandb_logger
 )
 trainer.fit(model, data)
 
+wandb_logger.log_hyperparams(model.hparams)
+
+'''
+trained_generator = model.generator
+trained_generator.eval()
+
+print('analysing..........')
+energies = [0, 110, 150, 190]
+analysis_history = defaultdict(list)
+resultfile = "/eos/user/k/ktsolaki/misc/3dgan_pytorch/3dgan_analysis_test1.pkl"
+analysis_loader = data.val_dataloader()
+nb_Test = len(analysis_loader.dataset)
+atime = time.time()
+
+# load all test data
+# for index, dtest in enumerate(analysis_loader):
+#     if index == 0:
+#         print("Keys in the batch:", dtest.keys())
+#         X_test, Y_test, ang_test, ecal_test = GetDataAngle(dtest, xscale=1, angscale=1, angtype="mtheta", thresh=0, daxis=1)
+#     else:
+#         if X_test.shape[0] < nb_Test:
+#             X_temp, Y_temp, ang_temp,  ecal_temp = GetDataAngle(dtest, xscale=1, angscale=1, angtype="mtheta", thresh=0, daxis=1)
+#             X_test = np.concatenate((X_test, X_temp))
+#             Y_test = np.concatenate((Y_test, Y_temp))
+#             ang_test = np.concatenate((ang_test, ang_temp))
+#             ecal_test = np.concatenate((ecal_test, ecal_temp))
+# if X_test.shape[0] > nb_Test:
+#     X_test, Y_test, ang_test, ecal_test = X_test[:nb_Test], Y_test[:nb_Test], ang_test[:nb_Test], ecal_test[:nb_Test]
+# else:
+#     nb_Test = X_test.shape[0] # the nb_test maybe different if total events are less than nEvents
+# var = sortEnergy([np.squeeze(X_test), Y_test, ang_test], ecal_test, energies, ang=1)
+# print(var.keys())
+# result = OptAnalysisAngle(var, trained_generator, energies, xpower = 0.85, concat=2)
+# print('{} seconds taken by analysis'.format(time.time()-atime))
+# analysis_history['total'].append(result[0])
+# analysis_history['energy'].append(result[1])
+# analysis_history['moment'].append(result[2])
+# analysis_history['angle'].append(result[3])
+# print('Result = ', result)
+# # write analysis history to a pickel file
+# pickle.dump({'results': analysis_history}, open(resultfile, 'wb'))
+
+X_test = []
+Y_test = []
+ang_test = []
+ecal_test = []
+
+for batch in analysis_loader:
+    X_test.append(batch['X'])
+    Y_test.append(batch['Y'])
+    ang_test.append(batch['ang'])
+    ecal_test.append(batch['ecal'])
+
+X_test = torch.cat(X_test, dim=0)
+Y_test = torch.cat(Y_test, dim=0)
+ang_test = torch.cat(ang_test, dim=0)
+ecal_test = torch.cat(ecal_test, dim=0)
+
+# min_value = 0
+# max_value = 1
+# # Check if elements are within the range
+# within_range_mask = (Y_test >= min_value) & (Y_test <= max_value)
+# # Check if any element is within the range
+# has_values_within_range = within_range_mask.any()
+# print(f"Contains values within range {min_value} to {max_value}: {has_values_within_range.item()}")
+
+
+# print(X_test.shape)
+# print(Y_test.shape)
+# print(ang_test.shape)
+# print(ecal_test.shape)
+
+var = sortEnergy([np.squeeze(X_test), Y_test, ang_test], ecal_test, energies, ang=1)
+#print(var.keys())
+# print(var["events_act0"].shape)
+# print(var["events_act110"].shape)
+# print(var["events_act150"].shape)
+# print(var["events_act190"].shape)
+
+# print(var["index0"])
+# print(var["indexes110"])
+# print(var["indexes150"])
+# print(var["indexes190"])
+
+result = OptAnalysisAngle(var, trained_generator, energies, xpower = 0.85, concat=2)
+print('{} seconds taken by analysis'.format(time.time()-atime))
+
+analysis_history['total'].append(result[0])
+analysis_history['energy'].append(result[1])
+analysis_history['moment'].append(result[2])
+analysis_history['angle'].append(result[3])
+print('Result = ', result)
+
+# write analysis history to a pickle file
+pickle.dump({'results': analysis_history}, open(resultfile, 'wb'))
+'''
