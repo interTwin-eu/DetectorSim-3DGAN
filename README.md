@@ -7,6 +7,7 @@ This project is based on the prototype 3DGAN model developed at CERN and is deve
 
 ## Dataset
 The data used for the training and validation processes of the model are 3D images representing calorimeter energy depositions and are publicly available in different formats:
+### Restricted Energy Data 100-200 GeV
 - compressed format: [https://zenodo.org/records/3603086#.ZEJOTs5Byqi](https://zenodo.org/records/3603086#.ZEJOTs5Byqi)
 - HDF5: [https://cernbox.cern.ch/s/3rK5UeRzRR3Kbnu](https://cernbox.cern.ch/s/3rK5UeRzRR3Kbnu)
 - [tfrecords](https://cernbox.cern.ch/files/link/public/DEUSrqXGVLUwpK2?tiles-size=1&items-per-page=100&view-mode=resource-table&sort-by=name&sort-dir=asc) (used for the Accelerated3DGAN version)
