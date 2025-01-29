@@ -59,6 +59,8 @@ class ParticlesDataset(Dataset):
             f = h5py.File(datafile, 'r')
             dataset = self.GetDataAngleParallel(f)
             for field, vals_array in dataset.items():
+                # Cast to float32 the full energy data (if using restricted energy data comment out the following line)
+                vals_array = vals_array.astype(np.float32)
                 if self.data.get(field) is not None:
                     # Resize to include the new array
                     new_shape = list(self.data[field].shape)
@@ -218,7 +220,7 @@ class ThreeDGAN(pl.LightningModule):
 
     def compute_global_loss(self, labels, predictions, loss_weights=[3, 0.1, 25, 0.1]):
         # Can be initialized outside
-        binary_crossentropy_object = nn.BCEWithLogitsLoss(reduction='none')
+        binary_crossentropy_object = nn.BCELoss(reduction='none')
         #there is no equivalent in pytorch for tf.keras.losses.MeanAbsolutePercentageError --> using the custom "mean_absolute_percentage_error" above!
         mean_absolute_percentage_error_object1 = self.mean_absolute_percentage_error(predictions[1], labels[1])
         mean_absolute_percentage_error_object2 = self.mean_absolute_percentage_error(predictions[3], labels[3])
@@ -553,8 +555,8 @@ class ThreeDGAN(pl.LightningModule):
     def configure_optimizers(self):
         lr = self.hparams.lr
 
-        optimizer_discriminator = torch.optim.RMSprop(self.discriminator.parameters(), lr)
-        optimizer_generator = torch.optim.RMSprop(self.generator.parameters(), lr)
+        optimizer_discriminator = torch.optim.RMSprop(self.discriminator.parameters(), lr, alpha=0.9, eps=1e-07)
+        optimizer_generator = torch.optim.RMSprop(self.generator.parameters(), lr, alpha=0.9, eps=1e-07)
         return [optimizer_discriminator, optimizer_generator], []
 
 
