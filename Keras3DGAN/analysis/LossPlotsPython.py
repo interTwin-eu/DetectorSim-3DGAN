@@ -74,8 +74,8 @@ def main():
    
 def get_parser():
     parser = argparse.ArgumentParser(description='Loss plots' )
-    parser.add_argument('--historyfile', action='store', type=str, default='/eos/user/k/ktsolaki/misc/3dgan_pytorch/3dgan_history_test.pkl', help='Pickle file for loss history')
-    parser.add_argument('--outdir', action='store', type=str, default='/eos/user/k/ktsolaki/misc/3dgan_pytorch/loss_plots/', help='directory for results')
+    parser.add_argument('--historyfile', action='store', type=str, default='../results/3dgan_history.pkl', help='Pickle file for loss history')
+    parser.add_argument('--outdir', action='store', type=str, default='results/loss_plots/', help='directory for results')
     parser.add_argument('--ylim1', type=float, default=30, help='y max for combined train loss')
     parser.add_argument('--ylim2', type=float, default=4, help='y max for BCE train loss')
     parser.add_argument('--ylim3', type=float, default=4, help='y max for BCE test loss')
@@ -86,7 +86,7 @@ def get_parser():
     parser.add_argument('--start_epoch', type=int, default=0, help='can be used to remove initial epochs')
     parser.add_argument('--fit_order', type=int, default=3, help='order of polynomial used for fit')
     parser.add_argument('--num_ang_losses', type=int, default=1, help='number of losses used for angle')
-    parser.add_argument('--num_add_loss', type=int, default=3, help='number of additional losses')
+    parser.add_argument('--num_add_loss', type=int, default=1, help='number of additional losses')
     parser.add_argument('--gen_weight', type=float, help='weight of GAN loss')
     parser.add_argument('--aux_weight', type=float, help='weight of auxilliary energy regression loss')
     parser.add_argument('--ecal_weight', type=float, help='weight of ecal sum loss')
@@ -112,10 +112,6 @@ def plot_loss(lossfile, ymax, lossdir, start_epoch, weights, losstype, lossnames
            '#9467bd', '#8c564b', '#e377c2', '#7f7f7f',
                          '#bcbd22', '#17becf']
    loop = np.arange(len(lossnames))
-
-   #print(disc_train.shape, gen_train.shape)
-   #print(loop)
-
 
    #Plots for Testing and Training Losses
    plt.figure(fig)

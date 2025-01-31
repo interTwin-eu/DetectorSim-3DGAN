@@ -6,10 +6,9 @@ import ROOT
 import numpy as np
 import time
 import keras.backend as K
-from utils.GANutils import GetData, GetAngleData, GetDataFiles, generate, safe_mkdir, generate_pt
+from utils.GANutils import GetData, GetAngleData, GetDataFiles, generate, safe_mkdir
 import utils.ROOTutils as my
 import time
-from pl_3dgan_models_v1 import *
 sys.path.insert(0,'../')
 try:
     import setGPU #if Caltech                                                                                                             
@@ -24,7 +23,7 @@ def get_parser():
    parser.add_argument('--particle', default='Ele', type=str, help="particle type")
    parser.add_argument('--labels', type=str, nargs='+', default=[''], help="labels for different weights")
    parser.add_argument('--xscales',  type=float, nargs='+', help="scaling factor for cell energies")
-   parser.add_argument('--datapath', default='reduced', help='Data to check the output obtained')
+   parser.add_argument('--datapath', default='full', help='Data to check the output obtained')
    parser.add_argument('--outdir', default= 'results/short_analysis', help='Complete PATH to save the output plot')
    parser.add_argument('--numevents', action='store', type=int, default=10000, help='Max limit for events used for validation')
    parser.add_argument('--latent', action='store', type=int, help='size of latent space to sample')
@@ -40,8 +39,7 @@ def get_parser():
 def main():
    parser = get_parser()
    args = parser.parse_args()
-   #gweights = args.gweights if isinstance(args.gweights, list) else [args.gweights]
-   gweights= args.gweights 
+   gweights = args.gweights if isinstance(args.gweights, list) else [args.gweights]
    labels = args.labels if isinstance(args.labels, list) else [args.labels]
    ang = args.ang
    particle = args.particle
@@ -61,12 +59,8 @@ def main():
    safe_mkdir(outdir)
    print('{} dir created'.format(outdir))
    K.set_image_data_format(dformat)
-
-   device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-   print(f'Using device: {device}')
-
    if ang:
-     #from AngleArch3dGAN import generator
+     from AngleArch3dGAN import generator
      dscale = 50.
      if not latent:
        latent = 256
@@ -74,8 +68,8 @@ def main():
        xscales = [1] * len(gweights) 
      xpower = 0.85
      if datapath=='reduced':
-       #datapath = "/storage/group/gpu/bigdata/gkhattak/*Measured3ThetaEscan/*.h5"  # Data path 100-200 GeV
-       datapath = "/eos/user/k/ktsolaki/data/3dgan_100_200_data/*.h5"                                                        
+       #datapath = "/storage/group/gpu/bigdata/gkhattak/*Measured3ThetaEscan/*.h5"
+       datapath = "/eos/user/k/ktsolaki/data/3dgan_100_200_data/*.h5"  # Data path 100-200 GeV                                                        
      elif datapath=='full':
        #datapath = "/storage/group/gpu/bigdata/LCDLargeWindow/LCDLargeWindow/varangle/*scan/*scan_RandomAngle_*.h5" # culture plate
        datapath = "/eos/user/k/ktsolaki/data/2_500_fullEnergy_data/*scan_RandomAngle_*.h5"
@@ -85,7 +79,7 @@ def main():
      data = datafiles[-1] # use the last file for the plots
      X, Y, angle = GetAngleData(data, angtype='theta', num_events=numevents)
    else:
-     #from EcalEnergyGan import generator
+     from EcalEnergyGan import generator
      dscale = 1.
      if not latent:
        latent = 200
@@ -117,29 +111,16 @@ def main():
    num_events = X.shape[0] # number of events can be reduced due to selection
    
    images =[]
-   #gm=generator(latent_size=latent, dformat = dformat)
-   gm = Generator(latent)
-   gm.to(device)
-   gm.eval()
-   # Load PyTorch weights from .pth (or .pt)
-   print(f"Loading PyTorch weights from {gweights}")
-   weights_file = gweights[0]  # Grab the first element
-   state_dict = torch.load(weights_file, map_location=device)
-   gm.load_state_dict(state_dict)
-
-   print(f"Generator weights loaded from {gweights}.")
-
+   gm=generator(latent_size=latent, dformat = dformat)
    for i, gweight in enumerate(gweights):
-   #gm.load_weights(gweight)
-    gm.load_state_dict(state_dict)
-    if ang:
-      angle = angle
-      images.append(generate_pt(gm, num_events, [Y/100., angle], latent=latent, concat=2))
-      images[i] = np.power(images[i], 1./xpower)
-    else:
-      images.append(generate_pt(gm, num_events, [Y/100.], latent=latent))
-    images[i] = np.squeeze(images[i])/(xscales[i] * dscale)
-
+      gm.load_weights(gweight)
+      if ang:
+        angle = angle
+        images.append(generate(gm, num_events, [Y/100., angle], latent=latent, concat=2))
+        images[i] = np.power(images[i], 1./xpower)
+      else:
+        images.append(generate(gm, num_events, [Y/100.], latent=latent))
+      images[i] = np.squeeze(images[i])/(xscales[i] * dscale)
    plotSF(X, images, Y, labels, out_file=outdir +'/SamplingFraction', error=error, stest=stest, ifC=C, grid=grid, leg=leg)
    plotshapes(X, images, x, y, z, Y, out_file=outdir +'/ShowerShapes',labels=labels, log=0, stest=stest, error=error, norm=norm, ifC=C, grid=grid, leg=leg)
    plotshapes(X, images, x, y, z, Y, out_file=outdir +'/ShowerShapes_log',labels=labels, log=1, stest=stest, error=error, norm=norm, ifC=C, grid=grid, leg=leg)

@@ -1,9 +1,11 @@
-# 3DGAN model for fast particle detector simulation
+# This branch contains 3DGAN developed in Tensorflow/Keras
+### Credit: https://github.com/svalleco/3Dgan/tree/Anglegan/keras 
 
-### 3D Generative Adversarial Network for generation of images of calorimeter depositions
-This project is based on the prototype 3DGAN model developed at CERN and is developed on PyTorch Lightning framework. Can also be found in the following repositories in different ML framework versions: 
-- Keras on TF1: [https://github.com/svalleco/3Dgan/tree/Anglegan/keras](https://github.com/svalleco/3Dgan/tree/Anglegan/keras)
-- Keras on TF2 (Accelerated3DGAN): [https://github.com/CERN-IT-INNOVATION/3DGAN](https://github.com/CERN-IT-INNOVATION/3DGAN)
+# Training with variable angle data 
+AngleArch3dGAN.py is the architecture and AngleTrain3dGAN.py is the training script.
+
+The weights dir is used to store weights from training. If weights for different trainings are to \
+be saved then --name can be used at command line to identify the training.
 
 
 ## Dataset
@@ -16,16 +18,14 @@ The data used for the training and validation processes of the model are 3D imag
 - HDF5: [https://cernbox.cern.ch/s/i7A0kfv6oqpLIZq](https://cernbox.cern.ch/s/i7A0kfv6oqpLIZq)
 
 ## Analysis
-In the analysis folder there are scripts plotting physics-based performance analytics. These scripts are based on the prototype developments [here](https://github.com/svalleco/3Dgan/tree/Anglegan/keras/analysis).
-
 The analysis compares the GAN generated images to G4 data events. All of the scripts in this section, take a sample of G4 events and then generate GAN events with similar input conditions (primary particle energy / primary particleincident  angle). Where events are selected in bins: the primary energy bins have a +/- 5 GeV tolerance and the incident angle bins have a tolerance of +/- 0.1 rad (5.73 degree). The [utils](https://github.com/interTwin-eu/DetectorSim-3DGAN/tree/main/Lightning3DGAN/analysis/utils) directory contains a set of files with frequently used utility functions. Most of the scripts except the LossPlotsPython.py require [ROOT software](https://root.cern.ch/) to be installed. Following is a brief description and a set of instructions for all scripts in this folder:
 A common feature for all the scripts is the ang (1: variable angle version 0: fixed angle version). The default is variable angle. The instructions will include only most useful parameters. Other options can be explored from parser help. 
 
-### 2dprojUpdated.py
+## 2Dprojections.py
 
 This scripts compares 2D projections for all the three planes for events from the G4 data with corressponding GAN generated events with same input values. The script can be submitted as:
 
-python3 2dprojUpdated.py --gweight *generator_weights* --outdir *results/your_result_dir*
+python3 2Dprojections.py --gweight *generator_weights* --outdir *results/your_result_dir*
 
 ### SimpleAnalysis.py
 
@@ -33,7 +33,7 @@ This scripts compares the two most crucial features of the generated events: the
 
 python3 SimpleAnalysis.py --gweights *weight1 weight2* --labels label1 label2 --outdir *results/your_result_dir*
 
-### RootAnalysisAngle.py (updated for single weight use, originally supports list of weights)
+### RootAnalysisAngle.py
 
 The scripts compares in detail different features of G4 and GAN events. The script can be submitted as:
 
@@ -45,7 +45,7 @@ This script takes the loss history generated from each training, saved as a pick
 
 python3 LossPlotsPython.py --historyfile *path_to_loss_history* --outdir *path_to_save_results*
 
-### SelectEpoch.py (not used)
+### SelectEpoch.py
 
 This script select the best epoch among a predefined number of epochs. The plots also provides the epoch to epoch progress based on the sampling fraction. The script can be submitted as:
 
